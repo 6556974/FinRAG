@@ -29,10 +29,7 @@ FinRAG/
 
 ### 1. Download Dataset
 
-```bash
-# Clone the FinanceRAG Challenge dataset
-git clone https://github.com/charlieoneill11/icaif-24-finance-rag-challenge.git
-```
+Go to https://www.kaggle.com/competitions/icaif-24-finance-rag-challenge/data to get dataset.
 
 ### 2. Install Dependencies
 
