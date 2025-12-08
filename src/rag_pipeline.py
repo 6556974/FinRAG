@@ -8,6 +8,9 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 import logging
 from tqdm import tqdm
+from google import genai
+from google.genai import types
+import os
 
 from .retriever import Retriever, RetrievalResult
 
@@ -129,6 +132,83 @@ class BedrockLLM:
                 
         except Exception as e:
             logger.error(f"Error generating text: {e}")
+            return f"Error: {str(e)}"
+
+
+class GeminiLLM:
+    """
+    Gemini LLM wrapper
+    """
+    
+    def __init__(
+        self,
+        model_id: str = "gemini-3-pro-preview",
+        api_key: Optional[str] = None,
+        max_tokens: int = 4096,
+        temperature: float = 0.1,
+        top_p: float = 0.9
+    ):
+        """
+        Initialize the Gemini Client using the new SDK structure.
+        
+        Args:
+            model_id: The model ID
+            api_key: Google Cloud/AI Studio API Key
+            max_tokens: Max output tokens
+            temperature: Creativity parameter
+            top_p: Nucleus sampling parameter
+        """
+        self.model_id = model_id
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+        self.top_p = top_p
+        
+        # 1. Handle API Key
+        # The new client can automatically find GOOGLE_API_KEY in env, 
+        # but we allow explicit passing for flexibility.
+        self.api_key = api_key or os.getenv("GOOGLE_API_KEY")
+        
+        if not self.api_key:
+            raise ValueError("Google API Key is required.")
+
+        # 2. Initialize the Client
+        try:
+            self.client = genai.Client(api_key=self.api_key)
+            logger.info(f"Initialized Gemini Client (New SDK) with model: {model_id}")
+        except Exception as e:
+            logger.error(f"Failed to initialize Gemini Client: {e}")
+            raise
+
+    def generate(self, prompt: str) -> str:
+        """
+        Generate text using the client.models.generate_content method.
+        
+        Args:
+            prompt: The input text prompt
+            
+        Returns:
+            The generated text response
+        """
+        try:
+            # 3. Create Configuration Object
+            config = types.GenerateContentConfig(
+                max_output_tokens=self.max_tokens,
+                temperature=self.temperature,
+                top_p=self.top_p
+            )
+
+            # 4. Call the API
+            response = self.client.models.generate_content(
+                model=self.model_id,
+                contents=prompt,
+                config=config
+            )
+
+            # 5. Extract Text
+            return response.text
+
+        except Exception as e:
+            logger.error(f"Error generating text with Gemini: {e}")
             return f"Error: {str(e)}"
 
 

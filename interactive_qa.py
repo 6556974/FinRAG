@@ -19,7 +19,7 @@ from src.data_loader import DataLoader, Query, merge_corpora
 from src.embeddings import BedrockEmbeddings
 from src.vector_store import FAISSVectorStore
 from src.retriever import Retriever
-from src.rag_pipeline import BedrockLLM, RAGPipeline
+from src.rag_pipeline import BedrockLLM, GeminiLLM, RAGPipeline
 
 
 def ask_question(question: str, dataset: str = None, top_k: int = 5, show_contexts: bool = True):
@@ -42,6 +42,21 @@ def ask_question(question: str, dataset: str = None, top_k: int = 5, show_contex
     # Load configuration
     config = load_config("config.yaml")
     data_loader = DataLoader(config.data.base_path)
+    if config.llm_provider == "gemini":
+        llm = GeminiLLM(
+            model_id=config.gemini.model_id,
+            max_tokens=config.gemini.max_tokens,
+            temperature=config.gemini.temperature,
+            top_p=config.gemini.top_p
+        )
+    else:
+        llm = BedrockLLM(
+            model_id=config.aws.llm_model,
+            region=config.aws.region,
+            max_tokens=config.aws.max_tokens,
+            temperature=config.aws.temperature,
+            top_p=config.aws.top_p
+        )
     
     # Load datasets
     if dataset:
@@ -132,12 +147,6 @@ def ask_question(question: str, dataset: str = None, top_k: int = 5, show_contex
     
     # Generate answer
     print("Generating answer...")
-    llm = BedrockLLM(
-        model_id=config.aws.llm_model,
-        region=config.aws.region,
-        max_tokens=config.aws.max_tokens,
-        temperature=config.aws.temperature
-    )
     
     rag = RAGPipeline(
         retriever=retriever,
