@@ -34,8 +34,6 @@ FinRAG/
 git clone https://github.com/charlieoneill11/icaif-24-finance-rag-challenge.git
 ```
 
-**Note**: Dataset is ~68MB and not included in this repository.
-
 ### 2. Install Dependencies
 
 ```bash
@@ -54,7 +52,8 @@ AWS_SECRET_ACCESS_KEY=your_secret
 AWS_SESSION_TOKEN=your_token  # if using temporary credentials
 AWS_REGION=us-west-2
 
-# Google Gemini API Key (for Ragas evaluation - get from https://aistudio.google.com/apikey)
+# Google Gemini API Key (required for Ragas evaluation)
+# Get from: https://aistudio.google.com/apikey
 GOOGLE_API_KEY=your_gemini_key
 EOF
 ```
@@ -62,6 +61,12 @@ EOF
 **Enable Bedrock models** in [AWS Console](https://console.aws.amazon.com/bedrock/):
 - ✅ Amazon Titan Embeddings V2
 - ✅ Amazon Titan Text Express (for answer generation)
+
+**Get Gemini API Key** (for Ragas evaluation):
+1. Visit https://aistudio.google.com/apikey
+2. Sign in with your Google account (students get free access)
+3. Create an API key
+4. Add to `.env` file as `GOOGLE_API_KEY`
 
 ### 4. Run Scripts
 
@@ -131,43 +136,71 @@ python main.py [options]
 |--------|-------------|---------|
 | `--dataset <name>` | Process specific dataset | `--dataset financebench` |
 | `--skip-generation` | Retrieval only (no LLM, faster) | `--skip-generation` |
-| `--max-queries <n>` | Limit number of queries | `--max-queries 50` |
-| `--skip-embeddings` | Use cached embeddings | `--skip-embeddings` |
-| `--rebuild-index` | Force rebuild vector index | `--rebuild-index` |
+| `--max-queries <n>` | Limit **answer generation** to N queries (retrieval still processes all) | `--max-queries 50` |
 | `--use-ragas` | Enable Ragas evaluation | `--use-ragas` |
-| `--log-level <level>` | Set log level (DEBUG/INFO/WARNING/ERROR) | `--log-level DEBUG` |
-| `--config <path>` | Custom config file | `--config my_config.yaml` |
+| `--no-log` | Disable log file output | `--no-log` |
 
 **Usage Examples**:
 
 ```bash
-# Quick test: retrieval only on 10 queries
+# Quick test: retrieval only on 10 randomly sampled queries
 python main.py --dataset financebench --max-queries 10 --skip-generation
 
-# Full evaluation with answer generation (50 queries)
+# Evaluate FinanceBench (uses all 45 available queries, since 45 < 50)
 python main.py --dataset financebench --max-queries 50
+
+# Evaluate FinQA with 50 randomly sampled queries (from 344 available)
+python main.py --dataset finqa --max-queries 50
 
 # Evaluate all datasets (takes ~40 min)
 python main.py
 
-# Use cached embeddings for faster testing
-python main.py --dataset finqa --skip-embeddings --skip-generation
+# Retrieval-only evaluation (no answer generation)
+python main.py --dataset finqa --skip-generation
 
-# Full RAG evaluation with Ragas metrics (uses AWS Bedrock)
+# Full RAG evaluation with Ragas metrics (uses Google Gemini)
 python main.py --dataset financebench --use-ragas --max-queries 20
 ```
 
+**Note on Ragas**: Ragas evaluation uses **Google Gemini 2.5 Flash** for objective assessment, avoiding self-evaluation bias. Ensure `GOOGLE_API_KEY` is set in your `.env` file (get from https://aistudio.google.com/apikey).
+
 **Available Datasets**:
-- `financebench` (180 docs, 150 queries)
-- `finqa` (6,251 docs, 1,147 queries)
-- `finder` (4,999 docs, 216 queries)
-- `convfinqa`, `finqabench`, `tatqa`, `multiheirtt`
+
+| Dataset | Documents | Queries | **Queries with Ground Truth** | Coverage |
+|---------|-----------|---------|-------------------------------|----------|
+| `finqa` | 2,789 | 1,147 | **344** ✅ | 30.0% |
+| `financebench` | 180 | 150 | **45** ✅ | 30.0% |
+| `finder` | 13,863 | 216 | **64** ✅ | 29.6% |
+| **Total (3 datasets)** | **16,832** | **1,513** | **453** ✅ | ~30% |
+
+**Notes**: 
+- Only queries with ground truth (qrels) can be evaluated with IR metrics (Recall@K, Precision@K, MRR). The system automatically filters to use only these 453 queries for evaluation.
+- **Important**: `--max-queries` only limits **answer generation**, not retrieval:
+  - **Retrieval**: Always processes ALL queries (fast, ~0.5s for 453 queries)
+  - **Generation**: Limited to N queries (slow, ~1.5s per query)
+  - Example: `--max-queries 3` → retrieves 453, generates 3 answers
+  - Reason: Separate evaluation of retrieval quality vs generation quality
+- When using `--max-queries N`:
+  - If available queries > N: randomly samples N queries (seed=42)
+  - If available queries ≤ N: uses all available queries
+  - Example: `--dataset financebench --max-queries 50` → uses all 45 queries (not 50)
+- **Evaluation Metrics Variance**:
+  - Small samples (e.g., `--max-queries 3`) may show high variance in retrieval metrics
+  - Some queries may have 0 retrieval metrics if no relevant docs are in top-K
+  - For stable evaluation results, use `--max-queries ≥ 50`
+  - Full evaluation (453 queries) baseline: Recall@10 ≈ 0.43, Recall@5 ≈ 0.34, Recall@1 ≈ 0.19
 
 **Output Files** (in `outputs/`):
 - `retrieval_results_<timestamp>.json` - Retrieved documents
 - `rag_responses_<timestamp>.json` - Generated answers
 - `evaluation_report_<timestamp>.csv` - Metrics summary
 - `finrag.log` - Detailed logs
+
+**Automatic Caching** (in `cache/`):
+- Embeddings are automatically cached in `cache/embeddings_cache.pkl`
+- **First run**: Generates embeddings (~30 seconds for all datasets)
+- **Subsequent runs**: Loads from cache (~0.5 seconds)
+- **No manual cache management needed** - the system handles it automatically
 
 ---
 
@@ -265,11 +298,14 @@ As part of Phase 1, we defined 10 representative financial queries to evaluate t
 
 ## 📂 Data Sources
 
-- **FinanceBench**: 180 docs, 150 questions (33 companies)
-- **FinQA**: 6,251 docs, 1,147 questions (numerical reasoning)
-- **FinDER**: 4,999 docs, 216 questions (information retrieval)
+- **FinQA**: 2,789 docs, 1,147 queries (344 with ground truth) - Numerical reasoning
+- **FinanceBench**: 180 docs, 150 queries (45 with ground truth) - 33 companies
+- **FinDER**: 13,863 docs, 216 queries (64 with ground truth) - Information retrieval
+- **Total**: 16,832 documents, 1,513 queries (**453 evaluable**)
 
 From [ACM-ICAIF '24 FinanceRAG Challenge](https://github.com/charlieoneill11/icaif-24-finance-rag-challenge)
+
+**Note**: ~30% of queries have ground truth annotations (qrels) for evaluation. The system automatically uses only these 453 queries when running evaluations to ensure accurate metrics.
 
 ## 🏗️ Architecture
 
@@ -282,7 +318,7 @@ Query → Embedding → Vector Search → Top-K Docs → LLM → Answer
 - **Embeddings**: AWS Bedrock Titan Embeddings V2 (`amazon.titan-embed-text-v2:0`)
 - **Vector Store**: FAISS (cosine similarity)
 - **LLM**: Amazon Titan Text Express (`amazon.titan-text-express-v1`)
-- **Evaluation**: Ragas (Google Gemini Pro `gemini-pro`) + IR metrics (Recall@K, MRR)
+- **Evaluation**: Ragas (Google Gemini 2.5 Flash) + IR metrics (Recall@K, MRR)
 
 ---
 
@@ -292,12 +328,12 @@ Query → Embedding → Vector Search → Top-K Docs → LLM → Answer
 |-----------|-------|---------|----------|---------|
 | **Embedding** | Titan Embeddings V2 | `amazon.titan-embed-text-v2:0` | AWS Bedrock | Convert text to 1024-dim vectors |
 | **Generation** | Titan Text Express | `amazon.titan-text-express-v1` | AWS Bedrock | Generate answers from context |
-| **Evaluation** | Gemini Pro | `gemini-pro` | Google AI | Evaluate answer quality (Ragas) |
+| **Evaluation** | Gemini 2.5 Flash | `gemini-2.5-flash` | Google AI | Evaluate answer quality (Ragas) |
 
 **Why these models?**
-- **Titan Embeddings V2**: High-quality embeddings, cost-effective
-- **Titan Text Express**: Fast, accurate, good cost/performance balance
-- **Gemini Pro**: Independent evaluator (avoids self-evaluation bias), free for students
+- **Titan Embeddings V2**: High-quality 1024-dim embeddings, cost-effective, fast
+- **Titan Text Express**: Fast generation, good quality, consistent AWS Bedrock integration
+- **Gemini 2.5 Flash**: Latest Google model with excellent JSON parsing, objective evaluation (avoids self-evaluation bias)
 
 ## ⚙️ Configuration
 
@@ -319,7 +355,7 @@ rag:
   max_contexts: 3    # Contexts sent to LLM
 ```
 
-**Note**: Ragas evaluation automatically uses Google Gemini Pro (`gemini-pro`). No additional configuration needed.
+**Note**: Ragas evaluation uses AWS Bedrock Titan model. For objective evaluation, consider using a different LLM (implementation supports pluggable LLM backends).
 
 ## 📖 Usage Examples
 
@@ -355,10 +391,11 @@ python interactive_qa.py "revenue growth rate" --dataset finqa
 
 ## 📊 Evaluation Metrics
 
-**Retrieval Metrics**:
+**Retrieval Metrics** (requires ground truth):
 - Recall@K: % of relevant docs found in top-K
 - Precision@K: % of retrieved docs that are relevant
 - MRR: Mean Reciprocal Rank
+- **Note**: Only 453 out of 1,513 queries (~30%) have ground truth annotations. The system automatically filters to use only these queries for retrieval evaluation.
 
 **RAG Metrics** (Ragas framework):
 - Context Precision: Relevance of retrieved contexts
@@ -366,7 +403,7 @@ python interactive_qa.py "revenue growth rate" --dataset finqa
 - Faithfulness: Answer grounded in context
 - Answer Relevancy: Answer addresses the question
 
-**Note**: Ragas evaluation uses **Google Gemini** for objective assessment. This avoids model self-evaluation bias.
+**Note**: Ragas evaluation uses **Google Gemini 2.5 Flash** for objective assessment. This avoids self-evaluation bias (using a different model than the generation LLM) and provides excellent JSON parsing compatibility.
 
 ## 📚 References
 

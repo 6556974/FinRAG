@@ -28,13 +28,17 @@ except ImportError as e:
     logger.warning(f"Ragas not available. Install with: pip install ragas. Error: {e}")
     RAGAS_AVAILABLE = False
 
-# Import Gemini for Ragas evaluation
+# Import LLM options for Ragas evaluation
+try:
+    from langchain_aws import ChatBedrock
+    BEDROCK_LLM_AVAILABLE = True
+except ImportError:
+    BEDROCK_LLM_AVAILABLE = False
+
 try:
     from langchain_google_genai import ChatGoogleGenerativeAI
     GEMINI_AVAILABLE = True
-    logger.info("Gemini available for Ragas evaluation")
 except ImportError:
-    logger.warning("langchain_google_genai not available. Install with: pip install langchain-google-genai")
     GEMINI_AVAILABLE = False
 
 
@@ -80,28 +84,32 @@ class RAGEvaluator:
                 if metric_name in metric_map:
                     self.ragas_metrics.append(metric_map[metric_name])
             
-            # Initialize Gemini LLM for Ragas evaluation
+            # Initialize Gemini for Ragas evaluation
+            # Use Gemini 2.0 Flash for better JSON parsing and objective evaluation
             if GEMINI_AVAILABLE:
                 try:
                     import os
                     api_key = os.getenv("GOOGLE_API_KEY")
                     if not api_key:
-                        raise ValueError("GOOGLE_API_KEY not found in environment")
+                        raise ValueError("GOOGLE_API_KEY not found in .env file")
                     
+                    # Use Gemini 2.5 Flash (latest, best JSON support for Ragas)
                     self.llm = ChatGoogleGenerativeAI(
-                        model="gemini-pro",
+                        model="gemini-2.5-flash",
                         google_api_key=api_key,
                         temperature=0.1,
                         max_output_tokens=2048
                     )
-                    logger.info("Initialized Ragas with Gemini (gemini-pro)")
+                    logger.info("Initialized Ragas with Gemini 2.5 Flash")
+                    logger.info("Using Gemini for objective evaluation (avoids self-evaluation bias)")
                 except Exception as e:
                     logger.error(f"Failed to initialize Gemini: {e}")
-                    logger.error("Please set GOOGLE_API_KEY in .env file")
+                    logger.error("Please ensure GOOGLE_API_KEY is set in .env file")
+                    logger.error("Get your API key from: https://aistudio.google.com/apikey")
                     raise
             else:
                 logger.error("Gemini not available. Install with: pip install langchain-google-genai")
-                raise ImportError("langchain_google_genai is required for Ragas evaluation")
+                raise ImportError("langchain-google-genai is required for Ragas evaluation")
             
             logger.info(f"Initialized Ragas evaluator with {len(self.ragas_metrics)} metrics")
         else:
@@ -165,33 +173,85 @@ class RAGEvaluator:
         
         logger.info(f"Evaluating {len(dataset)} responses with Ragas...")
         if self.llm:
-            logger.info("Using AWS Bedrock LLM for Ragas evaluation")
+            logger.info("Using Google Gemini for Ragas evaluation")
         else:
-            logger.info("Using default LLM (OpenAI) for Ragas evaluation")
+            logger.error("Gemini LLM not configured! Check GOOGLE_API_KEY in .env")
+            raise RuntimeError("Gemini LLM is required for Ragas evaluation")
         
         # Run evaluation
         try:
-            # Pass LLM to Ragas if available
-            if self.llm:
-                results = evaluate(
-                    dataset,
-                    metrics=self.ragas_metrics,
-                    llm=self.llm
-                )
+            import os
+            
+            # Workaround: Set dummy OPENAI_API_KEY to avoid Ragas internal errors
+            # Ragas may check for this even when using other LLMs
+            if not os.getenv("OPENAI_API_KEY"):
+                os.environ["OPENAI_API_KEY"] = "sk-dummy-key-not-used"
+                logger.debug("Set placeholder OPENAI_API_KEY (Bedrock will be used)")
+            
+            # Configure Gemini embeddings for Ragas (some metrics need it)
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            import os
+            
+            embeddings = GoogleGenerativeAIEmbeddings(
+                model="models/embedding-001",
+                google_api_key=os.getenv("GOOGLE_API_KEY")
+            )
+            
+            # Pass both LLM and embeddings to Ragas
+            logger.info("Starting Ragas evaluation (this may take several minutes)...")
+            logger.info(f"Evaluating {len(dataset)} samples with {len(self.ragas_metrics)} metrics")
+            logger.warning("Ragas evaluation is slow - each sample may take 2-4 minutes")
+            
+            # Note: Ragas 0.4.0 evaluate() supports: dataset, metrics, llm, embeddings, raise_exceptions
+            # It does NOT support: max_workers, show_progress
+            results = evaluate(
+                dataset,
+                metrics=self.ragas_metrics,
+                llm=self.llm,
+                embeddings=embeddings,
+                raise_exceptions=False  # Don't fail on individual metric errors
+            )
+            
+            # Convert to dictionary (Ragas 0.4 returns EvaluationResult object)
+            metrics_dict = {}
+            
+            try:
+                # Method 1: Try to_pandas() (most common for Ragas 0.4+)
+                if hasattr(results, 'to_pandas'):
+                    df = results.to_pandas()
+                    for col in df.columns:
+                        if col in self.metrics:
+                            # Calculate mean, ignoring NaN values
+                            values = df[col].dropna()
+                            if len(values) > 0:
+                                metrics_dict[col] = float(values.mean())
+                            else:
+                                logger.warning(f"Metric {col} has no valid values")
+                    logger.info(f"Extracted {len(metrics_dict)} metrics from Ragas results")
+                
+                # Method 2: Try direct dictionary access
+                elif isinstance(results, dict):
+                    metrics_dict = {k: float(v) for k, v in results.items() if k in self.metrics}
+                
+                # Method 3: Try scores attribute
+                elif hasattr(results, 'scores'):
+                    for metric in self.metrics:
+                        if metric in results.scores:
+                            metrics_dict[metric] = float(results.scores[metric])
+                
+                else:
+                    logger.warning(f"Unknown Ragas result type: {type(results)}")
+                    logger.warning(f"Result attributes: {dir(results)}")
+                    
+            except Exception as e:
+                logger.error(f"Failed to extract metrics from Ragas results: {e}")
+            
+            if metrics_dict:
+                logger.info("Ragas evaluation completed successfully")
+                return metrics_dict
             else:
-                results = evaluate(
-                    dataset,
-                    metrics=self.ragas_metrics
-                )
-            
-            # Convert to dictionary
-            metrics_dict = {
-                metric: float(value) 
-                for metric, value in results.items()
-            }
-            
-            logger.info("Ragas evaluation completed")
-            return metrics_dict
+                logger.warning("Ragas evaluation completed but returned no valid metrics")
+                return {}
             
         except Exception as e:
             logger.error(f"Ragas evaluation failed: {e}")
@@ -227,13 +287,22 @@ class RAGEvaluator:
             
             # Calculate metrics
             for k in k_values:
-                top_k = retrieved_ids[:k]
+                # Ensure we have enough retrieved documents for this k value
+                if len(retrieved_ids) < k:
+                    logger.warning(
+                        f"Query {query_id}: only {len(retrieved_ids)} docs retrieved, "
+                        f"but evaluating @{k} metrics. Using all available docs."
+                    )
+                
+                top_k = retrieved_ids[:k]  # Will use all if len < k
                 relevant_in_k = len(set(top_k) & relevant_docs)
                 
                 recall = relevant_in_k / len(relevant_docs) if relevant_docs else 0
                 metrics[f"recall@{k}"].append(recall)
                 
-                precision = relevant_in_k / k if k > 0 else 0
+                # For precision, use actual number of docs retrieved
+                actual_k = len(top_k)
+                precision = relevant_in_k / actual_k if actual_k > 0 else 0
                 metrics[f"precision@{k}"].append(precision)
             
             # MRR

@@ -199,15 +199,19 @@ class RAGPipeline:
         # Generate answer
         answer = self.llm.generate(prompt)
         
-        # Get context details
-        docs_with_scores = self.retriever.get_retrieved_documents(
+        # Get all retrieved documents for evaluation
+        all_docs_with_scores = self.retriever.get_retrieved_documents(
             retrieval_result,
             include_scores=True
-        )[:self.max_contexts]
+        )
         
-        contexts = [doc.text for doc, _ in docs_with_scores]
-        context_ids = [doc.id for doc, _ in docs_with_scores]
-        scores = [score for _, score in docs_with_scores]
+        # Use only max_contexts for answer generation
+        contexts = [doc.text for doc, _ in all_docs_with_scores[:self.max_contexts]]
+        
+        # But save all retrieved doc IDs for proper evaluation
+        # This ensures recall@k metrics are calculated correctly for all k values
+        context_ids = [doc.id for doc, _ in all_docs_with_scores]
+        scores = [score for _, score in all_docs_with_scores]
         
         return RAGResponse(
             query_id=query_id,
@@ -218,7 +222,8 @@ class RAGPipeline:
             retrieval_scores=scores,
             metadata={
                 'context_length': len(context_str.split()),
-                'num_contexts': len(contexts)
+                'num_contexts_used': len(contexts),  # Used for answer generation
+                'num_contexts_retrieved': len(context_ids)  # Available for evaluation
             }
         )
     

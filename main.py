@@ -48,18 +48,18 @@ def main(args):
     """Main execution function"""
     
     # Setup basic logging first
-    setup_logging(level=args.log_level)
+    setup_logging(level="INFO")
     logger = logging.getLogger(__name__)
     
     # Load configuration
     logger.info("Loading configuration...")
-    config = load_config(args.config)
+    config = load_config("config.yaml")
     
     # Update logging with config settings
     if not args.no_log:
         setup_logging(
             log_file=os.path.join(config.data.output_dir, "finrag.log"),
-            level=args.log_level
+            level="INFO"
         )
         logger = logging.getLogger(__name__)
     
@@ -116,6 +116,13 @@ def main(args):
     logger.info(f"Total queries: {len(all_queries)}")
     logger.info(f"Total qrels: {len(all_qrels)}")
     
+    # Filter queries to only include those with qrels (for more accurate evaluation)
+    queries_with_qrels = {qid: q for qid, q in all_queries.items() if qid in all_qrels}
+    if len(queries_with_qrels) < len(all_queries):
+        logger.warning(f"Note: Only {len(queries_with_qrels)}/{len(all_queries)} queries have ground truth (qrels)")
+        logger.warning(f"Using only queries with qrels for evaluation")
+        all_queries = queries_with_qrels
+    
     # -------------------------------------------------------------------------
     # Step 2: Generate Embeddings or Load from Cache
     # -------------------------------------------------------------------------
@@ -132,17 +139,12 @@ def main(args):
         cache_dir=str(cache_dir) if config.performance.cache_embeddings else None
     )
     
-    # Generate document embeddings
-    if not args.skip_embeddings:
-        logger.info("Generating document embeddings...")
-        doc_embeddings = embedder.embed_documents(all_documents)
-        
-        logger.info("Generating query embeddings...")
-        query_embeddings = embedder.embed_queries(all_queries)
-    else:
-        logger.info("Skipping embedding generation (using cached embeddings)")
-        doc_embeddings = embedder.embed_documents(all_documents)
-        query_embeddings = embedder.embed_queries(all_queries)
+    # Generate/load embeddings (auto-cached)
+    cached_count = len(embedder._cache)
+    logger.info(f"Processing embeddings ({cached_count} already cached)...")
+    doc_embeddings = embedder.embed_documents(all_documents)
+    query_embeddings = embedder.embed_queries(all_queries)
+    logger.info(f"Embeddings ready: {len(doc_embeddings)} documents, {len(query_embeddings)} queries")
     
     # -------------------------------------------------------------------------
     # Step 3: Build or Load Vector Store
@@ -153,7 +155,7 @@ def main(args):
     
     index_path = Path(config.vector_store.index_path)
     
-    if args.rebuild_index or not index_path.exists():
+    if not index_path.exists():
         logger.info("Building vector store...")
         vector_store = FAISSVectorStore(
             dimension=config.vector_store.dimension,
@@ -184,7 +186,11 @@ def main(args):
     )
     
     # Retrieve documents for all queries
-    logger.info(f"Retrieving documents for {len(all_queries)} queries...")
+    # Note: Retrieval is fast and free (local FAISS), so we retrieve for ALL queries
+    # to get comprehensive retrieval metrics. Answer generation (slow/costly) is limited later.
+    logger.info(f"Retrieving documents for {len(all_queries)} queries (retrieval is fast)...")
+    if args.max_queries and not args.skip_generation:
+        logger.info(f"Note: Answer generation will be limited to {args.max_queries} queries")
     retrieval_start = time.time()
     
     retrieval_results = retriever.batch_retrieve(
@@ -253,10 +259,21 @@ def main(args):
         
         # Limit queries if specified
         if args.max_queries:
-            query_subset = dict(list(all_queries.items())[:args.max_queries])
-            logger.info(f"Processing {len(query_subset)} queries (limited)")
+            # Randomly sample queries for more representative evaluation
+            import random
+            random.seed(42)  # Fixed seed for reproducibility
+            
+            query_items = list(all_queries.items())
+            if len(query_items) > args.max_queries:
+                sampled_items = random.sample(query_items, args.max_queries)
+                query_subset = dict(sampled_items)
+                logger.info(f"Randomly sampled {len(query_subset)} queries from {len(all_queries)}")
+            else:
+                query_subset = all_queries
+                logger.info(f"Processing all {len(query_subset)} queries (less than max_queries limit)")
         else:
             query_subset = all_queries
+            logger.info(f"Processing all {len(query_subset)} queries")
         
         # Generate answers
         logger.info(f"Generating answers for {len(query_subset)} queries...")
@@ -302,10 +319,24 @@ def main(args):
             metrics=config.evaluation.metrics
         )
         
-        # Run evaluation
+        # Run evaluation (only for queries with responses)
+        # Filter qrels to match the responses
+        response_qrels = {qid: all_qrels[qid] for qid in rag_responses.keys() if qid in all_qrels}
+        
+        logger.info(f"Evaluating {len(rag_responses)} responses with {len(response_qrels)} qrels")
+        logger.info(f"Sample response query IDs: {list(rag_responses.keys())[:3]}")
+        if response_qrels:
+            sample_qid = list(response_qrels.keys())[0]
+            logger.info(f"Sample qrels for {sample_qid}: {response_qrels[sample_qid][:5]}")
+            logger.info(f"Sample context_ids for {sample_qid}: {rag_responses[sample_qid].context_ids[:5]}")
+        
+        if len(response_qrels) == 0:
+            logger.warning(f"None of the {len(rag_responses)} queries with responses have ground truth (qrels)")
+            logger.warning(f"Cannot compute retrieval metrics. Response query IDs: {list(rag_responses.keys())[:5]}")
+        
         all_metrics = evaluator.evaluate_all(
             responses=rag_responses,
-            qrels=all_qrels
+            qrels=response_qrels
         )
         
         # Generate report
@@ -329,7 +360,9 @@ def main(args):
     
     # Performance Summary
     logger.info("\n📊 Performance Summary:")
-    logger.info(f"  Total queries processed: {len(all_queries)}")
+    logger.info(f"  Total queries retrieved: {len(all_queries)}")
+    if not args.skip_generation:
+        logger.info(f"  Total queries with answers: {len(rag_responses)}")
     logger.info(f"  Average retrieval latency: {avg_retrieval_latency:.3f}s per query")
     
     if not args.skip_generation:
@@ -351,14 +384,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FinRAG Baseline System")
     
-    # Configuration
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config.yaml",
-        help="Path to configuration file"
-    )
-    
     # Data options
     parser.add_argument(
         "--dataset",
@@ -369,18 +394,6 @@ if __name__ == "__main__":
     
     # Processing options
     parser.add_argument(
-        "--skip-embeddings",
-        action="store_true",
-        help="Skip embedding generation (use cached)"
-    )
-    
-    parser.add_argument(
-        "--rebuild-index",
-        action="store_true",
-        help="Rebuild vector index even if exists"
-    )
-    
-    parser.add_argument(
         "--skip-generation",
         action="store_true",
         help="Skip answer generation (retrieval only)"
@@ -390,7 +403,7 @@ if __name__ == "__main__":
         "--max-queries",
         type=int,
         default=None,
-        help="Maximum number of queries to process"
+        help="Maximum number of queries to process (randomly sampled)"
     )
     
     # Evaluation options
@@ -401,14 +414,6 @@ if __name__ == "__main__":
     )
     
     # Logging options
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        default="INFO",
-        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
-        help="Logging level"
-    )
-    
     parser.add_argument(
         "--no-log",
         action="store_true",
