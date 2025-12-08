@@ -1,7 +1,7 @@
 # FinRAG Configuration File
 
 # Options: "bedrock", "gemini"
-llm_provider: 'gemini'
+llm_provider: 'bedrock'
 
 # AWS Bedrock Settings
 aws:
