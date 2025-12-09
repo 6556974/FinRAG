@@ -11,17 +11,17 @@ aws:
     # - "anthropic.claude-3-haiku-20240307-v1:0" 
     
     # LLM Generation Parameters
-    max_tokens: 4096        # Maximum tokens to generate (controls answer length)
+    max_tokens: 512         # Maximum tokens to generate (REDUCED from 4096 for baseline)
                             # - Higher: Longer answers possible, but higher cost
                             # - Recommended: 512-1024 for brief answers, 2048-4096 for detailed analysis
     
-    temperature: 0.1        # Temperature (controls randomness and creativity)
+    temperature: 0.5        # Temperature (INCREASED from 0.1 for baseline - more randomness)
                             # - 0.0: Completely deterministic, always picks most likely token
                             # - 0.1-0.3: Low randomness, suitable for factual tasks (recommended for financial analysis)
                             # - 0.7-1.0: High randomness, suitable for creative writing
                             # - >1.0: Very high randomness, may produce incoherent output
     
-    top_p: 0.9              # Nucleus sampling parameter (controls vocabulary selection range)
+    top_p: 0.95             # Nucleus sampling parameter (INCREASED from 0.9 for baseline - more diverse)
                             # - 0.9: Sample from tokens with cumulative probability of 90% (recommended)
                             # - 0.95-1.0: More diverse output
                             # - 0.5-0.8: More conservative, predictable output
@@ -55,16 +55,16 @@ vector_store:
 
 # Retrieval Settings
 retrieval:
-  top_k: 20  # Number of documents to retrieve
-  rerank: true  # Enable reranking (not implemented in baseline)
-  hybrid_search: true  # Enable BM25 + vector hybrid search
-  chunk_size: 256  # Chunk size for long documents
-  chunk_overlap: 20  # Overlap between chunks
+  top_k: 3  # Number of documents to retrieve (REDUCED from 10 for baseline)
+  rerank: false  # Enable reranking (not implemented in baseline)
+  hybrid_search: false  # Enable BM25 + vector hybrid search
+  chunk_size: 512  # Chunk size for long documents
+  chunk_overlap: 50  # Overlap between chunks
 
 # RAG Settings
 rag:
-  context_window: 8000  # Max context tokens
-  max_contexts: 3  # Max number of retrieved contexts to use
+  context_window: 2000  # Max context tokens (REDUCED from 8000 for baseline)
+  max_contexts: 2  # Max number of retrieved contexts to use (REDUCED from 5 for baseline)
   prompt_template: |
     You are a financial analysis expert. Answer the following question based on the provided context from financial documents.
     
