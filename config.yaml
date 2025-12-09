@@ -1,102 +1,113 @@
 # FinRAG Configuration File
 
+# Options: "bedrock", "gemini"
+llm_provider: 'bedrock'
+
 # AWS Bedrock Settings
 aws:
-  region: "us-west-2"  # Using us-west-2
-  bedrock:
-    embedding_model: "amazon.titan-embed-text-v2:0"  # Titan Embeddings V2
-    llm_model: "amazon.titan-text-express-v1"  # Amazon Titan Text (no marketplace needed)
-    # Alternative models (require marketplace access):
-    # - "anthropic.claude-3-sonnet-20240229-v1:0" 
-    # - "anthropic.claude-3-haiku-20240307-v1:0" 
-    
-    # LLM Generation Parameters
-    max_tokens: 4096        # Maximum tokens to generate (controls answer length)
-                            # - Higher: Longer answers possible, but higher cost
-                            # - Recommended: 512-1024 for brief answers, 2048-4096 for detailed analysis
-    
-    temperature: 0.1        # Temperature (controls randomness and creativity)
-                            # - 0.0: Completely deterministic, always picks most likely token
-                            # - 0.1-0.3: Low randomness, suitable for factual tasks (recommended for financial analysis)
-                            # - 0.7-1.0: High randomness, suitable for creative writing
-                            # - >1.0: Very high randomness, may produce incoherent output
-    
-    top_p: 0.9              # Nucleus sampling parameter (controls vocabulary selection range)
-                            # - 0.9: Sample from tokens with cumulative probability of 90% (recommended)
-                            # - 0.95-1.0: More diverse output
-                            # - 0.5-0.8: More conservative, predictable output
-                            # - Works together with temperature to control generation quality
+    region: 'us-west-2' # Using us-west-2
+    bedrock:
+        embedding_model: 'amazon.titan-embed-text-v2:0' # Titan Embeddings V2
+        llm_model: 'amazon.titan-text-express-v1' # Amazon Titan Text (no marketplace needed)
+        # Alternative models (require marketplace access):
+        # - "anthropic.claude-3-sonnet-20240229-v1:0"
+        # - "anthropic.claude-3-haiku-20240307-v1:0"
+
+        # LLM Generation Parameters
+        max_tokens:
+            4096 # Maximum tokens to generate (controls answer length)
+            # - Higher: Longer answers possible, but higher cost
+            # - Recommended: 512-1024 for brief answers, 2048-4096 for detailed analysis
+
+        temperature:
+            0.1 # Temperature (controls randomness and creativity)
+            # - 0.0: Completely deterministic, always picks most likely token
+            # - 0.1-0.3: Low randomness, suitable for factual tasks (recommended for financial analysis)
+            # - 0.7-1.0: High randomness, suitable for creative writing
+            # - >1.0: Very high randomness, may produce incoherent output
+
+        top_p:
+            0.9 # Nucleus sampling parameter (controls vocabulary selection range)
+            # - 0.9: Sample from tokens with cumulative probability of 90% (recommended)
+            # - 0.95-1.0: More diverse output
+            # - 0.5-0.8: More conservative, predictable output
+            # - Works together with temperature to control generation quality
+
+gemini:
+    model_id: 'gemini-3-pro-preview'
+    max_tokens: 4096
+    temperature: 0.1
+    top_p: 0.9
 
 # Data Paths
 data:
-  base_path: "icaif-24-finance-rag-challenge"
-  datasets:
-    - name: "finqa"
-      corpus: "finqa_corpus.jsonl/corpus.jsonl"
-      queries: "finqa_queries.jsonl/queries.jsonl"
-      qrels: "FinQA_qrels.tsv"
-    - name: "financebench"
-      corpus: "financebench_corpus.jsonl/corpus.jsonl"
-      queries: "financebench_queries.jsonl/queries.jsonl"
-      qrels: "FinanceBench_qrels.tsv"
-    - name: "finder"
-      corpus: "finder_corpus.jsonl/corpus.jsonl"
-      queries: "finder_queries.jsonl/queries.jsonl"
-      qrels: "FinDER_qrels.tsv"
-  output_dir: "outputs"
-  cache_dir: "cache"
+    base_path: 'icaif-24-finance-rag-challenge'
+    datasets:
+        - name: 'finqa'
+          corpus: 'finqa_corpus.jsonl/corpus.jsonl'
+          queries: 'finqa_queries.jsonl/queries.jsonl'
+          qrels: 'FinQA_qrels.tsv'
+        - name: 'financebench'
+          corpus: 'financebench_corpus.jsonl/corpus.jsonl'
+          queries: 'financebench_queries.jsonl/queries.jsonl'
+          qrels: 'FinanceBench_qrels.tsv'
+        - name: 'finder'
+          corpus: 'finder_corpus.jsonl/corpus.jsonl'
+          queries: 'finder_queries.jsonl/queries.jsonl'
+          qrels: 'FinDER_qrels.tsv'
+    output_dir: 'outputs'
+    cache_dir: 'cache'
 
 # Vector Store Settings
 vector_store:
-  type: "faiss"  # Options: "faiss", "chroma"
-  index_path: "cache/faiss_index"
-  dimension: 1024  # Titan Embeddings V2 dimension
-  metric: "cosine"  # Options: "cosine", "euclidean", "dot_product"
+    type: 'faiss' # Options: "faiss", "chroma"
+    index_path: 'cache/faiss_index'
+    dimension: 1024 # Titan Embeddings V2 dimension
+    metric: 'cosine' # Options: "cosine", "euclidean", "dot_product"
 
 # Retrieval Settings
 retrieval:
-  top_k: 10  # Number of documents to retrieve
-  rerank: false  # Enable reranking (not implemented in baseline)
-  hybrid_search: false  # Enable BM25 + vector hybrid search
-  chunk_size: 512  # Chunk size for long documents
-  chunk_overlap: 50  # Overlap between chunks
+    top_k: 10 # Number of documents to retrieve
+    rerank: false # Enable reranking (not implemented in baseline)
+    hybrid_search: false # Enable BM25 + vector hybrid search
+    chunk_size: 512 # Chunk size for long documents
+    chunk_overlap: 50 # Overlap between chunks
 
 # RAG Settings
 rag:
-  context_window: 8000  # Max context tokens
-  max_contexts: 5  # Max number of retrieved contexts to use
-  prompt_template: |
-    You are a financial analysis expert. Answer the following question based on the provided context from financial documents.
-    
-    Context:
-    {context}
-    
-    Question: {question}
-    
-    Provide a precise, fact-based answer. If the context doesn't contain enough information to answer the question, say so.
-    
-    Answer:
+    context_window: 8000 # Max context tokens
+    max_contexts: 5 # Max number of retrieved contexts to use
+    prompt_template: |
+        You are a financial analysis expert. Answer the following question based on the provided context from financial documents.
+
+        Context:
+        {context}
+
+        Question: {question}
+
+        Provide a precise, fact-based answer. If the context doesn't contain enough information to answer the question, say so.
+
+        Answer:
 
 # Evaluation Settings
 evaluation:
-  metrics:
-    - "context_precision"
-    - "context_recall"
-    - "context_relevancy"
-    - "faithfulness"
-    - "answer_relevancy"
-  sample_size: null  # null means use all queries, or set a number for subset
-  ragas_llm: "gpt-4"  # Ragas uses OpenAI by default for evaluation
-  ragas_embeddings: "openai"  # Or use Bedrock embeddings
+    metrics:
+        - 'context_precision'
+        - 'context_recall'
+        - 'context_relevancy'
+        - 'faithfulness'
+        - 'answer_relevancy'
+    sample_size: null # null means use all queries, or set a number for subset
+    ragas_llm: 'gpt-4' # Ragas uses OpenAI by default for evaluation
+    ragas_embeddings: 'openai' # Or use Bedrock embeddings
 
 # Performance Settings
 performance:
-  batch_size: 32  # Batch size for embedding generation
-  max_workers: 4  # Number of parallel workers
-  cache_embeddings: true  # Cache generated embeddings
+    batch_size: 32 # Batch size for embedding generation
+    max_workers: 4 # Number of parallel workers
+    cache_embeddings: true # Cache generated embeddings
 
 # Logging
 logging:
-  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
-  log_file: "outputs/finrag.log"
-
+    level: 'INFO' # DEBUG, INFO, WARNING, ERROR
+    log_file: 'outputs/finrag.log'

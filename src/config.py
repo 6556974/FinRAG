@@ -5,7 +5,7 @@ Configuration management for FinRAG system
 import os
 import yaml
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from pydantic import BaseModel, Field
 
 
@@ -14,6 +14,14 @@ class AWSConfig(BaseModel):
     region: str = Field(default="us-east-1")
     embedding_model: str = Field(default="amazon.titan-embed-text-v2:0")
     llm_model: str = Field(default="anthropic.claude-3-sonnet-20240229-v1:0")
+    max_tokens: int = Field(default=4096)
+    temperature: float = Field(default=0.1)
+    top_p: float = Field(default=0.9)
+
+
+class GeminiConfig(BaseModel):
+    """Google Gemini configuration"""
+    model_id: str = Field(default="gemini-3-pro-preview")
     max_tokens: int = Field(default=4096)
     temperature: float = Field(default=0.1)
     top_p: float = Field(default=0.9)
@@ -76,7 +84,9 @@ class PerformanceConfig(BaseModel):
 
 class Config(BaseModel):
     """Main configuration class"""
+    llm_provider: str = Field(default="bedrock")
     aws: AWSConfig
+    gemini: GeminiConfig
     data: DataConfig
     vector_store: VectorStoreConfig
     retrieval: RetrievalConfig
@@ -99,6 +109,9 @@ class Config(BaseModel):
         aws_config = AWSConfig(**config_dict["aws"]["bedrock"])
         aws_config.region = config_dict["aws"]["region"]
         
+        gemini_data = config_dict.get("gemini", {})
+        gemini_config = GeminiConfig(**gemini_data) if gemini_data else GeminiConfig()
+        
         dataset_configs = [
             DatasetConfig(**ds) for ds in config_dict["data"]["datasets"]
         ]
@@ -111,7 +124,9 @@ class Config(BaseModel):
         )
         
         return cls(
+            llm_provider=config_dict.get("llm_provider", "bedrock"),
             aws=aws_config,
+            gemini=gemini_config,
             data=data_config,
             vector_store=VectorStoreConfig(**config_dict["vector_store"]),
             retrieval=RetrievalConfig(**config_dict["retrieval"]),

@@ -32,7 +32,7 @@ from src.data_loader import DataLoader, merge_corpora, Query
 from src.embeddings import BedrockEmbeddings
 from src.vector_store import FAISSVectorStore
 from src.retriever import Retriever, evaluate_retrieval
-from src.rag_pipeline import BedrockLLM, RAGPipeline
+from src.rag_pipeline import BedrockLLM, GeminiLLM, RAGPipeline
 
 
 def print_section(title):
@@ -51,7 +51,23 @@ def demo():
     print_section("Step 1: Loading Configuration")
     config = load_config("config.yaml")
     logger.info(f"Embedding Model: {config.aws.embedding_model}")
-    logger.info(f"LLM Model: {config.aws.llm_model}")
+    if config.llm_provider == "gemini":
+        logger.info(f"LLM Model: {config.gemini.model_id}")
+        llm = GeminiLLM(
+            model_id=config.gemini.model_id,
+            max_tokens=config.gemini.max_tokens,
+            temperature=config.gemini.temperature,
+            top_p=config.gemini.top_p
+        )
+    else:
+        logger.info(f"LLM Model: {config.aws.llm_model}")
+        llm = BedrockLLM(
+            model_id=config.aws.llm_model,
+            region=config.aws.region,
+            max_tokens=config.aws.max_tokens,
+            temperature=config.aws.temperature,
+            top_p=config.aws.top_p
+        )
     
     # 2. Load data
     print_section("Step 2: Loading All Datasets")
@@ -102,13 +118,6 @@ def demo():
         vector_store=vector_store,
         documents=documents,
         top_k=10
-    )
-    
-    llm = BedrockLLM(
-        model_id=config.aws.llm_model,
-        region=config.aws.region,
-        max_tokens=config.aws.max_tokens,
-        temperature=config.aws.temperature
     )
     
     rag = RAGPipeline(
