@@ -55,16 +55,16 @@ vector_store:
 
 # Retrieval Settings
 retrieval:
-  top_k: 10  # Number of documents to retrieve
-  rerank: false  # Enable reranking (not implemented in baseline)
-  hybrid_search: false  # Enable BM25 + vector hybrid search
-  chunk_size: 512  # Chunk size for long documents
-  chunk_overlap: 50  # Overlap between chunks
+  top_k: 20  # Number of documents to retrieve
+  rerank: true  # Enable reranking (not implemented in baseline)
+  hybrid_search: true  # Enable BM25 + vector hybrid search
+  chunk_size: 256  # Chunk size for long documents
+  chunk_overlap: 20  # Overlap between chunks
 
 # RAG Settings
 rag:
   context_window: 8000  # Max context tokens
-  max_contexts: 5  # Max number of retrieved contexts to use
+  max_contexts: 3  # Max number of retrieved contexts to use
   prompt_template: |
     You are a financial analysis expert. Answer the following question based on the provided context from financial documents.
     
@@ -86,13 +86,13 @@ evaluation:
     - "faithfulness"
     - "answer_relevancy"
   sample_size: null  # null means use all queries, or set a number for subset
-  ragas_llm: "gpt-4"  # Ragas uses OpenAI by default for evaluation
-  ragas_embeddings: "openai"  # Or use Bedrock embeddings
+  ragas_llm: "gemini-1.5-flash"  # Ragas uses OpenAI by default for evaluation
+  ragas_embeddings: "llm"  # Or use Bedrock embeddings
 
 # Performance Settings
 performance:
-  batch_size: 32  # Batch size for embedding generation
-  max_workers: 4  # Number of parallel workers
+  batch_size: 64  # Batch size for embedding generation
+  max_workers: 8  # Number of parallel workers
   cache_embeddings: true  # Cache generated embeddings
 
 # Logging
